@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>College Login System - JWT Authentication</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 10px;
+        }
+
+        .demo-credentials {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 25px;
+            border-left: 4px solid #667eea;
+        }
+
+        .demo-credentials h3 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .demo-credentials p {
+            color: #666;
+            font-size: 13px;
+            margin: 5px 0;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>🔐 College Portal</h1>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    required
+                    placeholder="Enter your username"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    required
+                    placeholder="Enter your password"
+                >
+            </div>
+
+            <button type="submit">Login</button>
+            <div class="loading" id="loading">Authenticating...</div>
+        </form>
+
+        <div class="message" id="message"></div>
+
+        <div class="demo-credentials">
+            <h3>📝 Demo Credentials:</h3>
+            <p>student1 / password123</p>
+            <p>student2 / securepass456</p>
+            <p>alice / alice123</p>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * JWT Authentication - Client-Side Flow
+         * 
+         * STEP 1: User enters credentials
+         * STEP 2: Send to /api/login endpoint
+         * STEP 3: Receive JWT token from server
+         * STEP 4: Store token in localStorage
+         * STEP 5: Use token for authenticated requests
+         */
+
+        const loginForm = document.getElementById('loginForm');
+        const message = document.getElementById('message');
+        const loading = document.getElementById('loading');
+
+        // BACKEND BASE URL - Change this if your Flask server is on a different address
+        const API_BASE_URL = 'http://127.0.0.1:5001';
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Show loading state
+            loading.style.display = 'block';
+            message.style.display = 'none';
+
+            try {
+                /**
+                 * STEP 1: Send login request to backend
+                 * 
+                 * The backend will:
+                 * 1. Validate username and password
+                 * 2. Create a JWT token with expiration
+                 * 3. Return the token
+                 */
+                const response = await fetch(`${API_BASE_URL}/api/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    /**
+                     * STEP 2: Store JWT token in localStorage
+                     * 
+                     * localStorage is a browser API that persists data even after refresh
+                     * The token will be sent with every future request
+                     * 
+                     * In production, use httpOnly cookies instead (more secure)
+                     */
+                    localStorage.setItem('jwtToken', data.token);
+                    localStorage.setItem('username', data.username);
+
+                    // Show success message
+                    showMessage('Login successful! Redirecting...', 'success');
+
+                    // Redirect to dashboard after 1 second
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1000);
+
+                } else {
+                    showMessage(data.message || 'Login failed', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('Network error. Make sure the Flask server is running on the correct port.', 'error');
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        function showMessage(text, type) {
+            message.textContent = text;
+            message.className = `message ${type}`;
+            message.style.display = 'block';
+        }
+
+        // Check if user is already logged in
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('jwtToken');
+            if (token) {
+                // Redirect to dashboard if already logged in
+                window.location.href = '/dashboard';
+            }
+        });
+    </script>
+</body>
+</html>
