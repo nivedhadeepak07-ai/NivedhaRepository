@@ -5,21 +5,22 @@ import jwt
 from functools import wraps
 import os
 
-# Initialize Flask app
+# Creates the Flask application instance 
 app = Flask(__name__)
 
-# Enable CORS for all routes
+# Allows CORS (cross-origin requests) to api 
+# Required so that browser can call Flask APIs 
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# ===== CONFIGURATION =====
-# In production, use environment variables and never commit secrets
-SECRET_KEY = "your-secret-key-change-this-in-production"  # Change this to a strong secret
+
+#SECRET_KEY = used to sign and verify JWT tokens (has to match exactly)
+#JWT_EXPIRATION_HOURS = how long tokens are valid for (in this scenario its 24 hrs)
+SECRET_KEY = "your-secret-key-change-this-in-production"  
 JWT_EXPIRATION_HOURS = 24
 
-# ===== MOCK USER DATABASE =====
-# This is for demonstration purposes only
-# In production, use a real database (PostgreSQL, MongoDB, etc.) with hashed passwords
-# MOCK USER DATABASE WITH FULL INFO
+#Stimulates a real database by storing username, password, email, 
+# enrollment date, status, courses, GPA 
+# used only for testing/demo
 MOCK_USERS = {
     "student1": {
         "password": "password123",
@@ -49,17 +50,17 @@ MOCK_USERS = {
 
 
 
-# ===== JWT AUTHENTICATION MIDDLEWARE =====
+# JWT Authentication Middleware = protects routes so only logged-in users can access them 
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Allow OPTIONS requests without authentication (CORS preflight)
+        # Allows CORS preflight (browser performs preflight checks so it prevents CORS errors)
         if request.method == "OPTIONS":
             return "", 204
         
         token = None
 
-        # JWT expected in Authorization header: "Bearer <token>"
+        #Extract JWT token = reads token from request header (returns 401 if the header is missing or token is not working)
         if "Authorization" in request.headers:
             try:
                 token = request.headers["Authorization"].split(" ")[1]
@@ -70,58 +71,59 @@ def token_required(f):
             return jsonify({"message": "Token is missing"}), 401
 
         try:
-            # Decode token
+            # Decode JWT token = verifies signature, expiration, token integrity (extracts username)
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
             username = data.get("username")
 
             if not username or username not in MOCK_USERS:
                 return jsonify({"message": "User not found"}), 401
 
-            # Pass username and full user dict
+            # Checks if the username exists within MOCK_USERS 
+            # Rejects request if its invalid 
             current_user = MOCK_USERS[username]
 
         except jwt.ExpiredSignatureError:
             return jsonify({"message": "Token expired"}), 401
         except jwt.InvalidTokenError:
             return jsonify({"message": "Invalid token"}), 401
-
+        
+        # Passes user info to the route = makes the data avaliable to the function
         return f(username, current_user, *args, **kwargs)
 
     return decorated
 
-# ===== ROUTES =====
+# ROUTES
 
 @app.route("/api/login", methods=["POST"])
 def login():
     """
     Login endpoint - Authenticates user and returns JWT token
     
-    Request body: { "username": "student1", "password": "password123" }
-    Response: { "token": "<jwt_token>", "message": "Login successful" }
-    
-    How it works:
-    1. Extract username and password from request
-    2. Check credentials against mock database
-    3. If valid, create JWT token with expiration
-    4. Return token to client
+    How it works: 
+    1. Reads the request 
+    2. Validates the username & password 
+    3. Verifies that the info is within MOCK_USERS
+    4. Creates JWT token with the username, issued at time, expiration time
+    5. Signs the token with SECRET_KEY 
+    6. Returns the token to the client 
     """
     data = request.get_json()
     
-    # Validate request contains username and password
+    # Validate & reads the request to make sure it contains username and password
     if not data or not data.get("username") or not data.get("password"):
         return jsonify({"message": "Missing username or password"}), 400
     
     username = data.get("username")
     password = data.get("password")
     
-    # Check credentials (in production, compare with hashed password)
+    # Check if the credentials are within MOCK_USERS 
     user = MOCK_USERS.get(username)
     if not user or user["password"] != password:
         return jsonify({"message": "Invalid credentials"}), 401
 
     
-    # ===== JWT TOKEN CREATION =====
-    # Create payload (data stored in the token)
+    # CREATES JWT TOKEN
+    # Create the data stored in the token (known as payload)
     payload = {
         "username": username,
         "iat": datetime.utcnow(),  # Issued at time
@@ -129,7 +131,8 @@ def login():
     }
     
     # Encode token using SECRET_KEY
-    # The token is signed with HS256 algorithm, making it cryptographically secure
+    # Uses HS256 algorithm - used to sign the token so that the server can verify that it was issued
+    # by someone who knows the SECRET_KEY 
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
     
     return jsonify({
@@ -138,7 +141,8 @@ def login():
         "message": "Login successful"
     }), 200
 
-
+# Returns the full profile information
+# Makes sure that the data is specific to the logged in user 
 @app.route("/api/dashboard", methods=["GET", "OPTIONS"])
 @token_required
 def dashboard(username, current_user):
@@ -151,7 +155,7 @@ def dashboard(username, current_user):
         }
     }), 200
 
-
+# Returns the detailed profile information from the mock data after the JWT token is verified 
 @app.route("/api/profile", methods=["GET", "OPTIONS"])
 @token_required
 def profile(username, current_user):
@@ -166,28 +170,22 @@ def profile(username, current_user):
         "credits": "120"
     }), 200
 
-
+#Logout Endpoint = requires a valid JWT & returns a logout message 
 @app.route("/api/logout", methods=["POST"])
 @token_required
 def logout(username, current_user):
     """
     Logout endpoint
     
-    Note: JWT tokens cannot be invalidated on the server side by default.
-    This is why token expiration is important.
-    
-    For production, implement token blacklist:
-    - Store invalidated tokens in a database or Redis
-    - Check blacklist in @token_required decorator
-    
-    For now, client just deletes the token from localStorage
+    Note: the client just deletes the token from localStorage 
+
     """
     return jsonify({
         "message": f"Goodbye, {username}!",
         "status": "logged_out"
     }), 200
 
-
+# Public endpoint = no authentication required, accessible to anyone 
 @app.route("/api/public", methods=["GET"])
 def public():
     """
@@ -198,14 +196,14 @@ def public():
         "data": "Anyone can access this"
     }), 200
 
-
+# Redirects the user to the login page 
 @app.route("/", methods=["GET"])
 def index():
     """
     Redirect to login page
     """
     return """
-    <!DOCTYPE html>
+    <!DOCTYPE html> 
     <html>
     <head>
         <meta charset="UTF-8">
@@ -219,12 +217,14 @@ def index():
     </body>
     </html>
     """
+# the info above is a simple HTML page that redirects the browser to /login 
 
-
+# Acts as the login page 
+# Returns 404 if the file is missing 
 @app.route("/login", methods=["GET"])
 def login_page():
     """
-    Serve the login page
+    Acts as the login page
     """
     try:
         with open('login.html', 'r') as f:
@@ -232,11 +232,12 @@ def login_page():
     except FileNotFoundError:
         return jsonify({"message": "Login page not found"}), 404
 
-
+# Acts as the dashboard page 
+# The frontend will handle the authentication 
 @app.route("/dashboard", methods=["GET"])
 def dashboard_page():
     """
-    Serve the dashboard page
+    Acts as the dashboard page
     """
     try:
         with open('dashboard.html', 'r') as f:
@@ -245,17 +246,19 @@ def dashboard_page():
         return jsonify({"message": "Dashboard page not found"}), 404
 
 
-# Error handling
+# Error handling 
+# 404 - returns JSON error message for not found endpoints 
+# 500 - catches unexpected server crashes 
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"message": "Endpoint not found"}), 404
-
 
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({"message": "Internal server error"}), 500
 
 
-# Run the app
+# Starts the Flask server 
+# Runs on port 5001 with debug mod off so that it induces production-safe behavior 
 if __name__ == "__main__":
     app.run(debug=False, port=5001)
